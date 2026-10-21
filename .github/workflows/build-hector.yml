@@ -1,0 +1,71 @@
+name: Build Hector APK from private source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout public builder
+        uses: actions/checkout@v4
+
+      - name: Checkout private Hector source
+        uses: actions/checkout@v4
+        with:
+          repository: hoseinalinejad021-sketch/Hector
+          ref: '@Chat-GPT'
+          token: ${{ secrets.HECTOR_REPO_TOKEN }}
+          path: Hector
+
+      - name: Verify source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Hector/settings.gradle.kts
+          test -s Hector/build.gradle.kts
+          test -s Hector/app/build.gradle.kts
+          test -s Hector/app/src/main/AndroidManifest.xml
+          test -s Hector/app/src/main/java/com/hector/android/MainActivity.kt
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Generate wrapper and build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Hector
+          mkdir -p "$HOME/.android"
+          if [ ! -s "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          gradle wrapper --gradle-version 8.11.1 --distribution-type bin
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+          test -s app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hector-debug-APK
+          path: Hector/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
